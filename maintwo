@@ -1,0 +1,1340 @@
+import math
+import tkinter as tk
+from tkinter import ttk, messagebox
+from datetime import datetime
+import qrcode
+from PIL import ImageTk
+
+# ============================================================
+# PARKSENSE - SMART PARKING MANAGEMENT SYSTEM
+# ============================================================
+
+root = tk.Tk()
+root.title("ParkSense - Smart Parking")
+root.geometry("900x600")
+root.resizable(False, False)
+root.configure(bg="#F5F7FA")
+
+# ============================================================
+# PARKING DATA
+# ============================================================
+
+parking_slots = [
+    {"slot":"A1-01","floor":1,"sector":"A","lane":"A1","status":"available"},
+    {"slot":"A1-02","floor":1,"sector":"A","lane":"A1","status":"occupied"},
+    {"slot":"A1-03","floor":1,"sector":"A","lane":"A1","status":"available"},
+
+    {"slot":"A2-01","floor":1,"sector":"A","lane":"A2","status":"occupied"},
+    {"slot":"A2-02","floor":1,"sector":"A","lane":"A2","status":"available"},
+    {"slot":"A2-03","floor":1,"sector":"A","lane":"A2","status":"available"},
+
+    {"slot":"B1-01","floor":2,"sector":"B","lane":"B1","status":"available"},
+    {"slot":"B1-02","floor":2,"sector":"B","lane":"B1","status":"occupied"},
+    {"slot":"B1-03","floor":2,"sector":"B","lane":"B1","status":"available"},
+
+    {"slot":"B2-01","floor":2,"sector":"B","lane":"B2","status":"occupied"},
+    {"slot":"B2-02","floor":2,"sector":"B","lane":"B2","status":"available"},
+    {"slot":"B2-03","floor":2,"sector":"B","lane":"B2","status":"occupied"},
+]
+
+parking_locations = [
+    "34 Block Faculty Parking",
+    "55 Block Parking",
+    "7 Block Parking",
+    "Main Gate Parking",
+]
+
+# ============================================================
+# GLOBAL VARIABLES
+# ============================================================
+
+current_parking = None
+selected_location = None
+
+location_label = None
+available_count_label = None
+occupied_count_label = None
+
+# ============================================================
+# PARKING ID
+# ============================================================
+
+def generate_parking_id():
+    return datetime.now().strftime("PS-%Y%m%d-%H%M%S")
+
+# ============================================================
+# DASHBOARD STATISTICS
+# ============================================================
+
+def update_dashboard_stats():
+
+    available = sum(
+        s["status"] == "available"
+        for s in parking_slots
+    )
+
+    occupied = sum(
+        s["status"] == "occupied"
+        for s in parking_slots
+    )
+
+    if available_count_label:
+        available_count_label.config(
+            text=str(available)
+        )
+
+    if occupied_count_label:
+        occupied_count_label.config(
+            text=str(occupied)
+        )
+
+# ============================================================
+# BILL CALCULATION
+# ============================================================
+
+def calculate_bill(entry_time, exit_time, rate):
+
+    duration = exit_time - entry_time
+
+    total_seconds = duration.total_seconds()
+
+    hours = max(
+        1,
+        math.ceil(total_seconds / 3600)
+    )
+
+    return hours, hours * rate
+
+# ============================================================
+# LOCATION SELECTION
+# ============================================================
+
+def select_parking_location():
+
+    global selected_location
+
+    location_window = tk.Toplevel(root)
+
+    location_window.title(
+        "ParkSense - Select Location"
+    )
+
+    location_window.geometry(
+        "550x450"
+    )
+
+    location_window.resizable(
+        False,
+        False
+    )
+
+    location_window.configure(
+        bg="#F5F7FA"
+    )
+
+    location_window.transient(root)
+    location_window.lift()
+    location_window.focus_force()
+
+    location_window.attributes(
+        "-topmost",
+        True
+    )
+
+    location_window.after(
+        500,
+        lambda: location_window.attributes(
+            "-topmost",
+            False
+        )
+    )
+
+    # Header
+
+    tk.Label(
+        location_window,
+        text="PARKSENSE",
+        font=("Arial", 26, "bold"),
+        fg="white",
+        bg="#17202A"
+    ).pack(
+        fill="x",
+        ipady=18
+    )
+
+    # Title
+
+    tk.Label(
+        location_window,
+        text="Select Parking Location",
+        font=("Arial", 22, "bold"),
+        fg="#17202A",
+        bg="#F5F7FA"
+    ).pack(
+        pady=(30, 8)
+    )
+
+    tk.Label(
+        location_window,
+        text="Choose the parking area you want to access.",
+        font=("Arial", 11),
+        fg="#5D6D7E",
+        bg="#F5F7FA"
+    ).pack(
+        pady=(0, 25)
+    )
+
+    # Location dropdown
+
+    location_var = tk.StringVar(
+        value=parking_locations[0]
+    )
+
+    location_menu = ttk.Combobox(
+        location_window,
+        textvariable=location_var,
+        values=parking_locations,
+        state="readonly",
+        width=32,
+        font=("Arial", 12)
+    )
+
+    location_menu.pack(
+        pady=10,
+        ipady=7
+    )
+
+    # Continue function
+
+    def continue_to_dashboard():
+
+        global selected_location
+
+        selected_location = location_var.get()
+
+        location_label.config(
+            text=f"Location: {selected_location}"
+        )
+
+        location_window.destroy()
+
+    # Continue button
+
+    tk.Button(
+        location_window,
+        text="Continue to Dashboard",
+        command=continue_to_dashboard,
+        font=("Arial", 13, "bold"),
+        bg="#2471A3",
+        fg="white",
+        activebackground="#1B4F72",
+        activeforeground="white",
+        width=24,
+        height=2,
+        relief="flat",
+        cursor="hand2"
+    ).pack(
+        pady=30
+    )
+
+    location_window.protocol(
+        "WM_DELETE_WINDOW",
+        root.destroy
+    )
+
+# ============================================================
+# QR TICKET
+# ============================================================
+
+def show_qr_ticket():
+
+    if current_parking is None:
+
+        messagebox.showinfo(
+            "No Ticket",
+            "You do not have an active parking ticket."
+        )
+
+        return
+
+    parking = current_parking
+
+    qr_data = (
+        f"ParkSense Parking Ticket\n"
+        f"Parking ID: {parking['parking_id']}\n"
+        f"Location: {parking['location']}\n"
+        f"Floor: {parking['floor']}\n"
+        f"Sector: {parking['sector']}\n"
+        f"Lane: {parking['lane']}\n"
+        f"Slot: {parking['slot']}\n"
+        f"Entry: {parking['entry_time'].strftime('%d-%m-%Y %I:%M %p')}\n"
+        f"Rate: Rs. {parking['rate']}/hour"
+    )
+
+    qr = qrcode.QRCode(
+        version=1,
+        box_size=8,
+        border=4
+    )
+
+    qr.add_data(qr_data)
+
+    qr.make(
+        fit=True
+    )
+
+    image = qr.make_image(
+        fill_color="black",
+        back_color="white"
+    )
+
+    image = image.resize(
+        (220, 220)
+    )
+
+    photo = ImageTk.PhotoImage(
+        image
+    )
+
+    ticket_window = tk.Toplevel(root)
+
+    ticket_window.title(
+        "ParkSense - Digital Parking Ticket"
+    )
+
+    ticket_window.geometry(
+        "520x690"
+    )
+
+    ticket_window.resizable(
+        False,
+        False
+    )
+
+    ticket_window.configure(
+        bg="#F5F7FA"
+    )
+
+    tk.Label(
+        ticket_window,
+        text="PARKSENSE",
+        font=("Arial", 25, "bold"),
+        fg="white",
+        bg="#17202A"
+    ).pack(
+        fill="x",
+        ipady=15
+    )
+
+    tk.Label(
+        ticket_window,
+        text="DIGITAL PARKING TICKET",
+        font=("Arial", 15, "bold"),
+        fg="#17202A",
+        bg="#F5F7FA"
+    ).pack(
+        pady=12
+    )
+
+    tk.Label(
+        ticket_window,
+        text=f"Parking ID: {parking['parking_id']}",
+        font=("Arial", 12, "bold"),
+        fg="#2471A3",
+        bg="#F5F7FA"
+    ).pack(
+        pady=4
+    )
+
+    details = (
+        f"Location : {parking['location']}\n"
+        f"Floor    : {parking['floor']}\n"
+        f"Sector   : {parking['sector']}\n"
+        f"Lane     : {parking['lane']}\n"
+        f"Slot     : {parking['slot']}\n\n"
+        f"Entry    : "
+        f"{parking['entry_time'].strftime('%d-%m-%Y %I:%M %p')}\n"
+        f"Rate     : ₹{parking['rate']}/hour"
+    )
+
+    tk.Label(
+        ticket_window,
+        text=details,
+        font=("Arial", 11),
+        justify="left",
+        fg="#17202A",
+        bg="#F5F7FA"
+    ).pack(
+        pady=8
+    )
+
+    tk.Label(
+        ticket_window,
+        image=photo,
+        bg="white"
+    ).pack(
+        pady=8
+    )
+
+    ticket_window.qr_photo = photo
+
+    tk.Label(
+        ticket_window,
+        text="Scan QR to verify parking details",
+        font=("Arial", 10, "bold"),
+        fg="#5D6D7E",
+        bg="#F5F7FA"
+    ).pack(
+        pady=4
+    )
+
+# ============================================================
+# EXIT PARKING
+# ============================================================
+
+def exit_parking():
+
+    global current_parking
+
+    if current_parking is None:
+
+        messagebox.showinfo(
+            "Exit Parking",
+            "You do not have an active parking session."
+        )
+
+        return
+
+    parking = current_parking
+
+    confirm = messagebox.askyesno(
+        "Confirm Exit",
+        f"Exit parking for slot {parking['slot']}?\n\n"
+        f"Parking ID: {parking['parking_id']}"
+    )
+
+    if not confirm:
+        return
+
+    exit_time = datetime.now()
+
+    hours, total_amount = calculate_bill(
+        parking["entry_time"],
+        exit_time,
+        parking["rate"]
+    )
+
+    for slot in parking_slots:
+
+        if slot["slot"] == parking["slot"]:
+
+            slot["status"] = "available"
+
+            break
+
+    bill_window = tk.Toplevel(root)
+
+    bill_window.title(
+        "ParkSense - Final Bill"
+    )
+
+    bill_window.geometry(
+        "500x520"
+    )
+
+    bill_window.resizable(
+        False,
+        False
+    )
+
+    bill_window.configure(
+        bg="#F5F7FA"
+    )
+
+    tk.Label(
+        bill_window,
+        text="PARKSENSE",
+        font=("Arial", 24, "bold"),
+        fg="white",
+        bg="#17202A"
+    ).pack(
+        fill="x",
+        ipady=14
+    )
+
+    tk.Label(
+        bill_window,
+        text="PARKING BILL",
+        font=("Arial", 20, "bold"),
+        fg="#17202A",
+        bg="#F5F7FA"
+    ).pack(
+        pady=(25, 15)
+    )
+
+    bill = (
+        f"Parking ID : {parking['parking_id']}\n"
+        f"Location   : {parking['location']}\n"
+        f"Floor      : {parking['floor']}\n"
+        f"Sector     : {parking['sector']}\n"
+        f"Lane       : {parking['lane']}\n"
+        f"Slot       : {parking['slot']}\n\n"
+        f"Entry Time : "
+        f"{parking['entry_time'].strftime('%d-%m-%Y %I:%M %p')}\n"
+        f"Exit Time  : "
+        f"{exit_time.strftime('%d-%m-%Y %I:%M %p')}\n"
+        f"Duration   : {hours} hour(s)\n"
+        f"Rate       : ₹{parking['rate']}/hour"
+    )
+
+    tk.Label(
+        bill_window,
+        text=bill,
+        font=("Arial", 11),
+        justify="left",
+        fg="#17202A",
+        bg="white",
+        padx=25,
+        pady=20
+    ).pack(
+        padx=35,
+        fill="x"
+    )
+
+    tk.Label(
+        bill_window,
+        text=f"TOTAL BILL  ₹{total_amount}",
+        font=("Arial", 19, "bold"),
+        fg="#2471A3",
+        bg="#F5F7FA"
+    ).pack(
+        pady=20
+    )
+
+    tk.Button(
+        bill_window,
+        text="Done",
+        command=bill_window.destroy,
+        font=("Arial", 12, "bold"),
+        bg="#2471A3",
+        fg="white",
+        width=15,
+        height=2,
+        relief="flat"
+    ).pack()
+
+    current_parking = None
+
+    update_dashboard_stats()
+
+# ============================================================
+# FIND PARKING
+# ============================================================
+
+def find_parking():
+
+    parking_window = tk.Toplevel(root)
+
+    parking_window.title(
+        "ParkSense - Find Parking"
+    )
+
+    parking_window.geometry(
+        "900x650"
+    )
+
+    parking_window.resizable(
+        False,
+        False
+    )
+
+    parking_window.configure(
+        bg="#F5F7FA"
+    )
+
+    header = tk.Frame(
+        parking_window,
+        bg="#17202A",
+        height=80
+    )
+
+    header.pack(
+        fill="x"
+    )
+
+    tk.Label(
+        header,
+        text="ParkSense",
+        font=("Arial", 25, "bold"),
+        fg="white",
+        bg="#17202A"
+    ).pack(
+        side="left",
+        padx=30,
+        pady=20
+    )
+
+    tk.Label(
+        header,
+        text="Find Parking",
+        font=("Arial", 13),
+        fg="#D5D8DC",
+        bg="#17202A"
+    ).pack(
+        side="left"
+    )
+
+    tk.Label(
+        parking_window,
+        text="Select Your Parking Area",
+        font=("Arial", 22, "bold"),
+        fg="#17202A",
+        bg="#F5F7FA"
+    ).pack(
+        pady=(25, 5)
+    )
+
+    tk.Label(
+        parking_window,
+        text="Choose a floor and sector to view parking slots.",
+        font=("Arial", 11),
+        fg="#5D6D7E",
+        bg="#F5F7FA"
+    ).pack()
+
+    selection_frame = tk.Frame(
+        parking_window,
+        bg="#F5F7FA"
+    )
+
+    selection_frame.pack(
+        pady=20
+    )
+
+    tk.Label(
+        selection_frame,
+        text="Floor:",
+        font=("Arial", 12, "bold"),
+        fg="#17202A",
+        bg="#F5F7FA"
+    ).grid(
+        row=0,
+        column=0,
+        padx=8
+    )
+
+    floor_var = tk.StringVar(
+        value="1"
+    )
+
+    floor_menu = ttk.Combobox(
+        selection_frame,
+        textvariable=floor_var,
+        values=["1", "2"],
+        state="readonly",
+        width=12,
+        font=("Arial", 11)
+    )
+
+    floor_menu.grid(
+        row=0,
+        column=1,
+        padx=8,
+        ipady=5
+    )
+
+    tk.Label(
+        selection_frame,
+        text="Sector:",
+        font=("Arial", 12, "bold"),
+        fg="#17202A",
+        bg="#F5F7FA"
+    ).grid(
+        row=0,
+        column=2,
+        padx=8
+    )
+
+    sector_var = tk.StringVar(
+        value="A"
+    )
+
+    sector_menu = ttk.Combobox(
+        selection_frame,
+        textvariable=sector_var,
+        values=["A", "B"],
+        state="readonly",
+        width=12,
+        font=("Arial", 11)
+    )
+
+    sector_menu.grid(
+        row=0,
+        column=3,
+        padx=8,
+        ipady=5
+    )
+
+    slots_frame = tk.Frame(
+        parking_window,
+        bg="#F5F7FA"
+    )
+
+    slots_frame.pack(
+        pady=5
+    )
+
+    available_label = tk.Label(
+        parking_window,
+        text="",
+        font=("Arial", 12, "bold"),
+        fg="#27AE60",
+        bg="#F5F7FA"
+    )
+
+    available_label.pack(
+        pady=5
+    )
+
+    def occupied_warning(slot):
+
+        messagebox.showwarning(
+            "Slot Occupied",
+            f"{slot['slot']} is already occupied."
+        )
+
+    def book_slot(slot):
+
+        global current_parking
+
+        if current_parking is not None:
+
+            messagebox.showwarning(
+                "Active Parking",
+                f"You already have an active parking session "
+                f"at slot {current_parking['slot']}."
+            )
+
+            return
+
+        if slot["status"] == "occupied":
+
+            occupied_warning(slot)
+
+            return
+
+        confirm = messagebox.askyesno(
+            "Confirm Parking",
+
+            f"Book this slot?\n\n"
+            f"Location: {selected_location}\n"
+            f"Floor: {slot['floor']}\n"
+            f"Sector: {slot['sector']}\n"
+            f"Lane: {slot['lane']}\n"
+            f"Slot: {slot['slot']}\n\n"
+            f"Parking Rate: ₹40/hour"
+        )
+
+        if not confirm:
+            return
+
+        slot["status"] = "occupied"
+
+        entry_time = datetime.now()
+
+        parking_id = generate_parking_id()
+
+        current_parking = {
+            "parking_id": parking_id,
+            "location": selected_location,
+            "slot": slot["slot"],
+            "floor": slot["floor"],
+            "sector": slot["sector"],
+            "lane": slot["lane"],
+            "entry_time": entry_time,
+            "rate": 40
+        }
+
+        messagebox.showinfo(
+            "Parking Booked",
+
+            f"Parking successfully booked!\n\n"
+            f"Parking ID: {parking_id}\n\n"
+            f"Location: {selected_location}\n"
+            f"Floor: {slot['floor']}\n"
+            f"Sector: {slot['sector']}\n"
+            f"Lane: {slot['lane']}\n"
+            f"Slot: {slot['slot']}\n\n"
+            f"Entry Time: "
+            f"{entry_time.strftime('%I:%M %p')}\n\n"
+            f"Rate: ₹40/hour"
+        )
+
+        display_slots()
+
+        update_dashboard_stats()
+
+        show_qr_ticket()
+
+    def display_slots():
+
+        for widget in slots_frame.winfo_children():
+
+            widget.destroy()
+
+        selected_floor = int(
+            floor_var.get()
+        )
+
+        selected_sector = sector_var.get()
+
+        filtered_slots = [
+
+            slot
+
+            for slot in parking_slots
+
+            if slot["floor"] == selected_floor
+            and slot["sector"] == selected_sector
+        ]
+
+        available_count = sum(
+            slot["status"] == "available"
+            for slot in filtered_slots
+        )
+
+        available_label.config(
+            text=
+            f"Available: "
+            f"{available_count} / "
+            f"{len(filtered_slots)}"
+        )
+
+        for index, slot in enumerate(filtered_slots):
+
+            if slot["status"] == "available":
+
+                bg_color = "#27AE60"
+
+                status_text = "AVAILABLE"
+
+                action = book_slot
+
+            else:
+
+                bg_color = "#E74C3C"
+
+                status_text = "OCCUPIED"
+
+                action = occupied_warning
+
+            slot_box = tk.Frame(
+                slots_frame,
+                bg=bg_color,
+                width=160,
+                height=90,
+                cursor="hand2"
+            )
+
+            slot_box.grid(
+                row=index // 3,
+                column=index % 3,
+                padx=12,
+                pady=10
+            )
+
+            slot_box.pack_propagate(
+                False
+            )
+
+            slot_label = tk.Label(
+                slot_box,
+                text=slot["slot"],
+                font=("Arial", 15, "bold"),
+                fg="white",
+                bg=bg_color,
+                cursor="hand2"
+            )
+
+            slot_label.pack(
+                pady=(15, 2)
+            )
+
+            status_label = tk.Label(
+                slot_box,
+                text=status_text,
+                font=("Arial", 9, "bold"),
+                fg="white",
+                bg=bg_color,
+                cursor="hand2"
+            )
+
+            status_label.pack()
+
+            slot_box.bind(
+                "<Button-1>",
+                lambda event,
+                s=slot,
+                a=action:
+                a(s)
+            )
+
+            slot_label.bind(
+                "<Button-1>",
+                lambda event,
+                s=slot,
+                a=action:
+                a(s)
+            )
+
+            status_label.bind(
+                "<Button-1>",
+                lambda event,
+                s=slot,
+                a=action:
+                a(s)
+            )
+
+    def recommend_slot():
+
+        selected_floor = int(
+            floor_var.get()
+        )
+
+        selected_sector = sector_var.get()
+
+        available_slots = [
+
+            slot
+
+            for slot in parking_slots
+
+            if slot["floor"] == selected_floor
+            and slot["sector"] == selected_sector
+            and slot["status"] == "available"
+        ]
+
+        if not available_slots:
+
+            messagebox.showwarning(
+                "No Parking",
+                "No available slots in this floor and sector."
+            )
+
+            return
+
+        best_slot = available_slots[0]
+
+        messagebox.showinfo(
+            "Recommended Parking",
+
+            f"⭐ Recommended Slot\n\n"
+            f"Location: {selected_location}\n"
+            f"Floor: {best_slot['floor']}\n"
+            f"Sector: {best_slot['sector']}\n"
+            f"Lane: {best_slot['lane']}\n"
+            f"Slot: {best_slot['slot']}"
+        )
+
+    floor_menu.bind(
+        "<<ComboboxSelected>>",
+        lambda event:
+        display_slots()
+    )
+
+    sector_menu.bind(
+        "<<ComboboxSelected>>",
+        lambda event:
+        display_slots()
+    )
+
+    button_frame = tk.Frame(
+        parking_window,
+        bg="#F5F7FA"
+    )
+
+    button_frame.pack(
+        pady=12
+    )
+
+    tk.Button(
+        button_frame,
+        text="View Parking",
+        command=display_slots,
+        font=("Arial", 12, "bold"),
+        bg="#2471A3",
+        fg="white",
+        width=16,
+        height=2,
+        relief="flat",
+        cursor="hand2"
+    ).pack(
+        side="left",
+        padx=8
+    )
+
+    tk.Button(
+        button_frame,
+        text="Recommend Best Slot",
+        command=recommend_slot,
+        font=("Arial", 12, "bold"),
+        bg="#17202A",
+        fg="white",
+        width=20,
+        height=2,
+        relief="flat",
+        cursor="hand2"
+    ).pack(
+        side="left",
+        padx=8
+    )
+
+    display_slots()
+
+# ============================================================
+# MY PARKING
+# ============================================================
+
+def my_parking():
+
+    if current_parking is None:
+
+        messagebox.showinfo(
+            "My Parking",
+            "You currently have no active parking session."
+        )
+
+        return
+
+    parking = current_parking
+
+    win = tk.Toplevel(root)
+
+    win.title(
+        "ParkSense - My Parking"
+    )
+
+    win.geometry(
+        "500x500"
+    )
+
+    win.resizable(
+        False,
+        False
+    )
+
+    win.configure(
+        bg="#F5F7FA"
+    )
+
+    tk.Label(
+        win,
+        text="MY PARKING",
+        font=("Arial", 23, "bold"),
+        fg="white",
+        bg="#17202A"
+    ).pack(
+        fill="x",
+        ipady=15
+    )
+
+    details = (
+
+        f"Parking ID\n"
+        f"{parking['parking_id']}\n\n"
+
+        f"📍 {parking['location']}\n\n"
+
+        f"Floor: {parking['floor']}    "
+        f"Sector: {parking['sector']}\n"
+
+        f"Lane: {parking['lane']}      "
+        f"Slot: {parking['slot']}\n\n"
+
+        f"Entry Time\n"
+
+        f"{parking['entry_time'].strftime('%d %B %Y, %I:%M %p')}\n\n"
+
+        f"Parking Rate: "
+        f"₹{parking['rate']}/hour"
+    )
+
+    tk.Label(
+        win,
+        text=details,
+        font=("Arial", 12),
+        justify="center",
+        fg="#17202A",
+        bg="white",
+        padx=25,
+        pady=25
+    ).pack(
+        padx=30,
+        pady=25,
+        fill="x"
+    )
+
+    tk.Button(
+        win,
+        text="View QR Ticket",
+        command=show_qr_ticket,
+        font=("Arial", 12, "bold"),
+        bg="#7D3C98",
+        fg="white",
+        width=18,
+        height=2,
+        relief="flat"
+    ).pack()
+
+# ============================================================
+# MY TICKET
+# ============================================================
+
+def my_ticket():
+
+    show_qr_ticket()
+
+# ============================================================
+# MAIN DASHBOARD
+# ============================================================
+
+header = tk.Frame(
+    root,
+    bg="#17202A",
+    height=80
+)
+
+header.pack(
+    fill="x"
+)
+
+tk.Label(
+    header,
+    text="ParkSense",
+    font=("Arial", 28, "bold"),
+    fg="white",
+    bg="#17202A"
+).pack(
+    side="left",
+    padx=35,
+    pady=20
+)
+
+tk.Label(
+    header,
+    text="Smart Parking Management",
+    font=("Arial", 11),
+    fg="#D5D8DC",
+    bg="#17202A"
+).pack(
+    side="left",
+    pady=25
+)
+
+location_label = tk.Label(
+    header,
+    text="",
+    font=("Arial", 10, "bold"),
+    fg="#5DADE2",
+    bg="#17202A"
+)
+
+location_label.pack(
+    side="right",
+    padx=30
+)
+
+# ============================================================
+# WELCOME
+# ============================================================
+
+tk.Label(
+    root,
+    text="Find your parking space easily.",
+    font=("Arial", 24, "bold"),
+    fg="#17202A",
+    bg="#F5F7FA"
+).pack(
+    pady=(55, 10)
+)
+
+tk.Label(
+    root,
+    text="Check parking availability, find your slot and manage your parking.",
+    font=("Arial", 12),
+    fg="#5D6D7E",
+    bg="#F5F7FA"
+).pack()
+
+# ============================================================
+# STATISTICS
+# ============================================================
+
+stats_frame = tk.Frame(
+    root,
+    bg="#F5F7FA"
+)
+
+stats_frame.pack(
+    pady=45
+)
+
+available_box = tk.Frame(
+    stats_frame,
+    bg="white",
+    width=220,
+    height=120
+)
+
+available_box.pack(
+    side="left",
+    padx=15
+)
+
+available_box.pack_propagate(
+    False
+)
+
+tk.Label(
+    available_box,
+    text="AVAILABLE",
+    font=("Arial", 11, "bold"),
+    fg="#27AE60",
+    bg="white"
+).pack(
+    pady=(20, 5)
+)
+
+available_count_label = tk.Label(
+    available_box,
+    text="0",
+    font=("Arial", 28, "bold"),
+    fg="#17202A",
+    bg="white"
+)
+
+available_count_label.pack()
+
+occupied_box = tk.Frame(
+    stats_frame,
+    bg="white",
+    width=220,
+    height=120
+)
+
+occupied_box.pack(
+    side="left",
+    padx=15
+)
+
+occupied_box.pack_propagate(
+    False
+)
+
+tk.Label(
+    occupied_box,
+    text="OCCUPIED",
+    font=("Arial", 11, "bold"),
+    fg="#E74C3C",
+    bg="white"
+).pack(
+    pady=(20, 5)
+)
+
+occupied_count_label = tk.Label(
+    occupied_box,
+    text="0",
+    font=("Arial", 28, "bold"),
+    fg="#17202A",
+    bg="white"
+)
+
+occupied_count_label.pack()
+
+# ============================================================
+# MAIN BUTTONS
+# ============================================================
+
+button_frame = tk.Frame(
+    root,
+    bg="#F5F7FA"
+)
+
+button_frame.pack()
+
+tk.Button(
+    button_frame,
+    text="Find Parking",
+    command=find_parking,
+    font=("Arial", 13, "bold"),
+    bg="#2471A3",
+    fg="white",
+    width=18,
+    height=2,
+    relief="flat",
+    cursor="hand2"
+).pack(
+    side="left",
+    padx=7
+)
+
+tk.Button(
+    button_frame,
+    text="My Parking",
+    command=my_parking,
+    font=("Arial", 13, "bold"),
+    bg="#17202A",
+    fg="white",
+    width=18,
+    height=2,
+    relief="flat",
+    cursor="hand2"
+).pack(
+    side="left",
+    padx=7
+)
+
+tk.Button(
+    button_frame,
+    text="QR Ticket",
+    command=my_ticket,
+    font=("Arial", 13, "bold"),
+    bg="#7D3C98",
+    fg="white",
+    width=15,
+    height=2,
+    relief="flat",
+    cursor="hand2"
+).pack(
+    side="left",
+    padx=7
+)
+
+tk.Button(
+    button_frame,
+    text="Exit Parking",
+    command=exit_parking,
+    font=("Arial", 13, "bold"),
+    bg="#E67E22",
+    fg="white",
+    width=15,
+    height=2,
+    relief="flat",
+    cursor="hand2"
+).pack(
+    side="left",
+    padx=7
+)
+
+# ============================================================
+# START APPLICATION
+# ============================================================
+
+update_dashboard_stats()
+
+root.after(
+    100,
+    select_parking_location
+)
+
+root.mainloop()
